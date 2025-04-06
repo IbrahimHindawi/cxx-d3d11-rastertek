@@ -1,0 +1,12 @@
+[submodule "scripts"]
+	path = scripts
+	url = https://www.github.com/IbrahimHindawi/scripts
+[submodule "extern/haikal"]
+	path = extern/haikal
+	url = https://www.github.com/IbrahimHindawi/haikal
+[submodule "extern/saha"]
+	path = extern/saha
+	url = https://github.com/IbrahimHindawi/saha
+[submodule "extern/haikalxx"]
+	path = extern/haikalxx
+	url = https://github.com/IbrahimHindawi/haikalxx
