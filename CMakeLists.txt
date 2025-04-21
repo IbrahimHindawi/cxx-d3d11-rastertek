@@ -12,6 +12,9 @@ include_directories(extern/haikalxx/inc)
 # include_directories(extern/saha/src)
 add_executable(${PROJECT_NAME} WIN32
     src/main.cpp
+    src/shader.cpp
+    src/model.cpp
+    src/camera.cpp
 )
 # add_subdirectory(extern) # in case of modules...
 

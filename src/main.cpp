@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+#define UNICODE
 #include <windows.h>
 
 #include <DirectXMath.h>
@@ -12,25 +13,32 @@
 #pragma comment(lib, "d3dcompiler.lib")
 
 #include <core.h>
+
+#include "camera.h"
+#include "model.h"
+#include "shader.h"
+
 #include <saha.h>
 #include <Array.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+
 struct Core
 {
-    LPCSTR name;
+    // LPCSTR name;
+    LPCWSTR name;
     HINSTANCE hinstance;
     HWND hwnd;
     bool done;
 };
-global Core core;
+static_global Core core;
 
 struct Input
 {
     bool keys[256];
 };
-global Input input;
+static_global Input input;
 
 void inputInitialize()
 {
@@ -78,10 +86,15 @@ struct Gfx
 
     DirectX::XMMATRIX projection;
     DirectX::XMMATRIX world;
+    DirectX::XMMATRIX view;
     DirectX::XMMATRIX ortho;
     D3D11_VIEWPORT viewport;
+
+    Camera *camera;
+    Model *model;
+    Shader *shader;
 };
-global Gfx gfx;
+static_global Gfx gfx;
 
 void gfxInitalize(i32 screenWidth, i32 screenHeight, HWND hwnd)
 {
@@ -95,7 +108,7 @@ bool D3D11Initialize(i32 screenWidth, i32 screenHeight, bool vsync, HWND hwnd, b
 	IDXGIFactory *factory;
 	IDXGIAdapter *adapter;
 	IDXGIOutput *adapterOutput;
-	u32 numModes, i, numerator, denominator;
+	u32 numModes, numerator, denominator;
 	u64 stringLength;
 	DXGI_MODE_DESC *displayModeList;
 	DXGI_ADAPTER_DESC adapterDesc;
@@ -123,12 +136,13 @@ bool D3D11Initialize(i32 screenWidth, i32 screenHeight, bool vsync, HWND hwnd, b
 
     // displayModeList = new DXGI_MODE_DESC[numModes];
     displayModeList = (DXGI_MODE_DESC *)malloc(sizeof(DXGI_MODE_DESC) * numModes);
+    *displayModeList = {};
     if (FAILED(result)) { return false; }
 
     result = adapterOutput->GetDisplayModeList(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_ENUM_MODES_INTERLACED, &numModes, displayModeList);
     if (FAILED(result)) { return false; }
 
-    for (i32 i = 0; i < numModes; i++)
+    for (u32 i = 0; i < numModes; i++)
     {
         if (displayModeList[i].Width == (u32)screenWidth)
         {
@@ -378,7 +392,7 @@ void D3D11EndScene()
     return;
 }
 
-global LRESULT CALLBACK MessageHandler(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam)
+static_global LRESULT CALLBACK MessageHandler(HWND hwnd, UINT umsg, WPARAM wparam, LPARAM lparam)
 {
     switch(umsg)
 	{
@@ -405,7 +419,7 @@ global LRESULT CALLBACK MessageHandler(HWND hwnd, UINT umsg, WPARAM wparam, LPAR
 		}
 	}
 }
-global LRESULT CALLBACK WndProc(HWND hwnd, UINT umessage, WPARAM wparam, LPARAM lparam)
+static_global LRESULT CALLBACK WndProc(HWND hwnd, UINT umessage, WPARAM wparam, LPARAM lparam)
 {
 	switch(umessage)
 	{
@@ -431,7 +445,7 @@ global LRESULT CALLBACK WndProc(HWND hwnd, UINT umessage, WPARAM wparam, LPARAM 
 	}
 }
 
-void windowsInitalize(i32 *screenWidth, i32 *screenHeight)
+bool windowsInitalize(i32 *screenWidth, i32 *screenHeight)
 {
     WNDCLASSEX wc;
     DEVMODE dm_screen_settings;
@@ -439,6 +453,7 @@ void windowsInitalize(i32 *screenWidth, i32 *screenHeight)
     i32 posy;
     core.hinstance = GetModuleHandle(NULL);
     core.name = TEXT("Engine");
+    // core.name = L"Engine";
 
 	wc.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	wc.lpfnWndProc   = WndProc;
@@ -482,7 +497,7 @@ void windowsInitalize(i32 *screenWidth, i32 *screenHeight)
     SetForegroundWindow(core.hwnd);
     SetFocus(core.hwnd);
     ShowCursor(false);
-    return;
+    return true;
 }
 
 void windowsDeinitialize()
@@ -510,9 +525,38 @@ bool initialize()
         .SCREEN_DEPTH = 1000.f,
         .SCREEN_NEAR = .3f,
     };
-    windowsInitalize(&screenWidth, &screenHeight);
+    result = windowsInitalize(&screenWidth, &screenHeight);
+    if (!result)
+    {
+        MessageBox(core.hwnd, TEXT("Could not initialize Windows"), TEXT("Error"), MB_OK);
+        return false;
+    }
     gfxInitalize(screenWidth, screenHeight, core.hwnd);
-    D3D11Initialize(screenWidth, screenHeight, gfx.VSYNC_ENABLED, core.hwnd, gfx.FULL_SCREEN, gfx.SCREEN_DEPTH, gfx.SCREEN_NEAR);
+    result = D3D11Initialize(screenWidth, screenHeight, gfx.VSYNC_ENABLED, core.hwnd, gfx.FULL_SCREEN, gfx.SCREEN_DEPTH, gfx.SCREEN_NEAR);
+    if (!result)
+    {
+        MessageBox(core.hwnd, TEXT("Could not initialize D3D11"), TEXT("Error"), MB_OK);
+        return false;
+    }
+    gfx.camera = (Camera *)malloc(sizeof(Camera) * 1);
+    *gfx.camera = {};
+    cameraSetPosition(gfx.camera, 0.f, 0.f, -5.f);
+    gfx.model = (Model *)malloc(sizeof(Model) * 1);
+    *gfx.model = {};
+    result = modelInitialize(gfx.model, gfx.device);
+    if (!result)
+    {
+        MessageBox(core.hwnd, TEXT("Could not initialize model"), TEXT("Error"), MB_OK);
+        return false;
+    }
+    gfx.shader = (Shader *)malloc(sizeof(Shader) * 1);
+    *gfx.shader = {};
+    result = shaderInitialize(gfx.shader, gfx.device, core.hwnd);
+    if (!result)
+    {
+        MessageBox(core.hwnd, TEXT("Could not initialize shader"), TEXT("Error"), MB_OK);
+        return false;
+    }
     return true;
 }
 
@@ -523,7 +567,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR pScmdline,
     arenaInit(&arena);
     Array<i8> array = Array_reserve<i8>(&arena, 12);
     for (i32 i = 0; i < array.length; i++) {
-        printf("array[%d] = %d\n", i, array.data[i]);
+        // printf("array[%d] = %d\n", i, array.data[i]);
     }
 
     if (!initialize()) { return -1; }
@@ -548,7 +592,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR pScmdline,
                 core.done = true;
             }
         }
-        D3D11BeginScene(1.f, 0.f, 0.f, 1.f);
+        DirectX::XMMATRIX world = {};
+        DirectX::XMMATRIX view = {};
+        DirectX::XMMATRIX projection = {};
+        bool result;
+        D3D11BeginScene(.1f, .1f, .1f, 1.f);
+        cameraRender(gfx.camera);
+        world = gfx.world;
+        view = gfx.camera->view;
+        projection = gfx.projection;
+        modelRender(gfx.model, gfx.deviceContext);
+        result = shaderRender(gfx.shader, gfx.deviceContext, gfx.model->indexCount, world, view, projection);
+        if (!result)
+        {
+            return false;
+        }
         D3D11EndScene();
     }
     return 0;
